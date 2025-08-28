@@ -1,1 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Catalyst Production Tracker</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #111827;
+    --muted: #94a3b8;
+    --text: #e5e7eb;
+    --accent: #60a5fa;
+    --good: #22c55e;
+    --warn: #f59e0b;
+    --bad: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: linear-gradient(120deg, #0b1020, #0f172a);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+  }
+  .container {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 1.5rem; margin: 0; }
+  .controls {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  select, button, input[type="text"] {
+    background: #0b1220;
+    color: var(--text);
+    border: 1px solid #23324a;
+    padding: 8px 10px;
+    border-radius: 10px;
+    outline: none;
+  }
+  button:hover { border-color: var(--accent); }
+  .card {
+    background: #0b1220cc;
+    border: 1px solid #1e293b;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px #020617;
+    overflow: hidden;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead th {
+    position: sticky; top: 0;
+    background: #0b1220;
+    color: #e2e8f0;
+    text-align: left;
+    font-weight: 600;
+    padding: 12px;
+    border-bottom: 1px solid #1f2937;
+    z-index: 1;
+  }
+  tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px dashed #263245;
+    vertical-align: middle;
+  }
+  tbody tr:hover { background: #0b122030; }
+  .small { font-size: 12px; color: var(--muted); }
+  .progress {
+    height: 8px; width: 100px; background: #1f2937; border-radius: 999px; overflow: hidden;
+  }
+  .bar { height: 100%; width: 0%; background: var(--accent); transition: width .2s ease; }
+  .checkbox-cell { text-align: center; }
+  .icon-input { width: 44px; text-align: center; font-size: 18px; }
+  .num { width: 60px; text-align: right; }
+  .row-actions { display: flex; gap: 6px; }
+  .footer-note { margin-top: 10px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🧪 Catalyst Production Tracker</h1>
+      <div class="controls">
+        <label for="month" class="small">Month</label>
+        <select id="month">
+          <option>September 2025</option>
+          <option>October 2025</option>
+          <option>November 2025</option>
+          <option>December 2025</option>
+        </select>
+        <button id="addRow">Add Row</button>
+        <button id="deleteSelected">Delete Selected</button>
+        <button id="exportCSV">Export CSV</button>
+        <input type="file" id="importCSV" accept=".csv" />
+      </div>
+    </header>
+    <div class="card">
+      <table id="tracker">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="selectAll"></th>
+            <th>Writer</th>
+            <th>Story Title</th>
+            <th>Editor</th>
+            <th title="Week 1 - Pitch + Interview Emails">W1</th>
+            <th title="Week 2 - Drafting + Interview">W2</th>
+            <th title="Week 3 - Draft Submitted">W3</th>
+            <th title="Week 4 - Editing + Publishing">W4</th>
+            <th>Status</th>
+            <th>Icon</th>
+            <th>Progress</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="footer-note small">
+      Tip: check the boxes as you complete each week. Progress updates automatically and everything is saved in your browser for the chosen month.
+    </div>
+  </div>
+<script>
+const monthSelect = document.getElementById('month');
+const tbody = document.querySelector('#tracker tbody');
+const selectAll = document.getElementById('selectAll');
+const statusOptions = ["", "Not Started", "In Progress", "Drafting", "Editing", "Ready", "Published", "Blocked"];
 
+function keyForMonth(m) { return "catalyst-tracker-" + m; }
+
+function loadMonth(m) {
+  tbody.innerHTML = "";
+  const raw = localStorage.getItem(keyForMonth(m));
+  if(!raw) return;
+  const rows = JSON.parse(raw);
+  rows.forEach(addRowFromData);
+}
+
+function saveMonth() {
+  const m = monthSelect.value;
+  const rows = [];
+  [...tbody.querySelectorAll('tr')].forEach(tr => {
+    const cells = tr.querySelectorAll('td');
+    rows.push({
+      selected: cells[0].querySelector('input[type="checkbox"]').checked,
+      writer: cells[1].querySelector('input').value,
+      title: cells[2].querySelector('input').value,
+      editor: cells[3].querySelector('input').value,
+      w1: cells[4].querySelector('input').checked,
+      w2: cells[5].querySelector('input').checked,
+      w3: cells[6].querySelector('input').checked,
+      w4: cells[7].querySelector('input').checked,
+      status: cells[8].querySelector('select').value,
+      icon: cells[9].querySelector('input').value,
+      progress: cells[10].querySelector('.bar').style.width.replace('%',''),
+      notes: cells[11].querySelector('input').value,
+    });
+  });
+  localStorage.setItem(keyForMonth(m), JSON.stringify(rows));
+}
+
+function progressFromChecks(w1,w2,w3,w4) {
+  const total = [w1,w2,w3,w4].filter(Boolean).length;
+  return Math.round((total/4)*100);
+}
+
+function addRowFromData(d={}) {
+  const tr = document.createElement('tr');
+
+  tr.innerHTML = `
+    <td class="checkbox-cell"><input type="checkbox" ${d.selected ? "checked":""}></td>
+    <td><input type="text" placeholder="Writer" value="${d.writer||""}"></td>
+    <td><input type="text" placeholder="Story title" value="${d.title||""}"></td>
+    <td><input type="text" placeholder="Editor" value="${d.editor||""}"></td>
+    <td class="checkbox-cell"><input type="checkbox" ${d.w1 ? "checked":""}></td>
+    <td class="checkbox-cell"><input type="checkbox" ${d.w2 ? "checked":""}></td>
+    <td class="checkbox-cell"><input type="checkbox" ${d.w3 ? "checked":""}></td>
+    <td class="checkbox-cell"><input type="checkbox" ${d.w4 ? "checked":""}></td>
+    <td>
+      <select>${
+        statusOptions.map(s => `<option ${d.status===s?"selected":""}>${s}</option>`).join("")
+      }</select>
+    </td>
+    <td><input class="icon-input" type="text" placeholder="🌟" value="${d.icon||""}"></td>
+    <td><div class="progress"><div class="bar" style="width:${d.progress||0}%"></div></div></td>
+    <td><input type="text" placeholder="Notes" value="${d.notes||""}"></td>
+  `;
+
+  const update = () => {
+    const inputs = tr.querySelectorAll('input[type="checkbox"]');
+    const p = progressFromChecks(inputs[1].checked, inputs[2].checked, inputs[3].checked, inputs[4].checked);
+    tr.querySelector('.bar').style.width = p + '%';
+    saveMonth();
+  };
+
+  tr.querySelectorAll('input, select').forEach(el => el.addEventListener('input', update));
+  tbody.appendChild(tr);
+  update();
+}
+
+document.getElementById('addRow').addEventListener('click', () => addRowFromData({}));
+document.getElementById('deleteSelected').addEventListener('click', () => {
+  [...tbody.querySelectorAll('tr')].forEach(tr => {
+    if (tr.querySelector('td input[type="checkbox"]').checked) tr.remove();
+  });
+  saveMonth();
+});
+
+monthSelect.addEventListener('change', () => loadMonth(monthSelect.value));
+selectAll.addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  tbody.querySelectorAll('tr input[type="checkbox"]').forEach(cb => cb.checked = checked);
+});
+
+document.getElementById('exportCSV').addEventListener('click', () => {
+  const rows = [["Writer","Story Title","Editor","W1","W2","W3","W4","Status","Icon","Progress","Notes"]];
+  [...tbody.querySelectorAll('tr')].forEach(tr => {
+    const cells = tr.querySelectorAll('td');
+    rows.push([
+      cells[1].querySelector('input').value,
+      cells[2].querySelector('input').value,
+      cells[3].querySelector('input').value,
+      cells[4].querySelector('input').checked ? "1":"0",
+      cells[5].querySelector('input').checked ? "1":"0",
+      cells[6].querySelector('input').checked ? "1":"0",
+      cells[7].querySelector('input').checked ? "1":"0",
+      cells[8].querySelector('select').value,
+      cells[9].querySelector('input').value,
+      cells[10].querySelector('.bar').style.width.replace('%',''),
+      cells[11].querySelector('input').value,
+    ]);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = monthSelect.value.replace(' ','_') + "_Catalyst_Production.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importCSV').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    const lines = text.split(/\r?\n/).filter(Boolean);
+    const rows = lines.slice(1).map(line => {
+      const cols = line.match(/("([^"]|"")*"|[^,]+)/g).map(s => s.replace(/^"|"$|""/g, m => m === '""' ? '"' : ''));
+      return {
+        writer: cols[0]||"", title: cols[1]||"", editor: cols[2]||"",
+        w1: cols[3]==="1", w2: cols[4]==="1", w3: cols[5]==="1", w4: cols[6]==="1",
+        status: cols[7]||"", icon: cols[8]||"", progress: cols[9]||"0", notes: cols[10]||""
+      };
+    });
+    tbody.innerHTML = "";
+    rows.forEach(addRowFromData);
+    saveMonth();
+  };
+  reader.readAsText(file);
+});
+
+// Initialize
+loadMonth(monthSelect.value);
+</script>
+</body>
+</html>
